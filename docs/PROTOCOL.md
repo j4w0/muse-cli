@@ -40,6 +40,15 @@ chat / feed / goals / ideas / sessions / ...
   chunk fails with `DecodeError: Wire format was corrupt`. Frames of different
   `chunk_id`s can interleave, so `Gateway._read_frame()` buffers per id.
   (`egress.approvals` returns ~123 KB and hit this.)
+- **Outgoing chunks:** the web client's `3hwep63ozz01s.js` framing code
+  (inspected November 3, 2026) splits the serialized **ServiceRequest** into
+  payloads of at most **65,489 bytes**, with at most **256 chunks**. All chunks
+  share a signed int64 id, have zero-based indices and the same total. Each
+  transport frame is separately encrypted; the send lock covers the whole
+  envelope to preserve cipher ordering. Chunk before encryption, not after it.
+  The CLI now uses those same bounds for requests (previously outgoing requests
+  were single-frame only). Unit tests reconstruct the original request and
+  assert each frame plus its 16-byte authentication tag fits within 65,535 bytes.
 - **Request:** `ServiceRequest{service, payload =
   ServiceFrame{stream_id, request =
   ApplicationRequest{verb, path, headers, body, end_body}}}`. Stream ids start
@@ -52,6 +61,18 @@ chat / feed / goals / ideas / sessions / ...
 - **Method table:** `routes.json` (258 methods extracted from the web bundle).
 
 ## Server quirks learned from live errors
+
+- **Image input:** the web client's attachment builder in `3prk5wftwnh26.js`
+  emits `chat.stream` items shaped as `{type: "image", mime_type: "image/png",
+  data_base64: "...", filename: "screen.png"}`. Text uses a separate
+  `{type: "text", text: "..."}` item in the same `items` array. No separate file
+  upload endpoint is required for these image items. PNG/JPEG screenshot items
+  using this shape were accepted and visually described by the agent during
+  the preceding manual screenshot review. `send --image` implements that shape,
+  with a 10 MiB combined raw-image CLI limit to leave room for base64/framing
+  under the envelope budget. GIF/WebP signature handling and multi-chunk sends
+  have offline unit coverage; a real-account multi-chunk upload has not yet been
+  verified. No new gateway route, protobuf descriptor or crypto change is needed.
 
 - `chat.history`: GET query params only; `transcript_mode` is rejected, omit
   it; `session_id` scopes to a side chat; `limit` works. History events use

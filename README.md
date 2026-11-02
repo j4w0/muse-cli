@@ -189,6 +189,9 @@ muse-cli threads                                  # main chat + side chats
 muse-cli history --limit 5                        # recent messages
 muse-cli history --thread <session-id> --limit 5  # one side chat
 muse-cli send "summarize my unread" --wait 120    # send + wait for the reply
+muse-cli send "Review this screenshot" --image ./screen.png --wait 120
+muse-cli send "Compare these" --image ./before.png --image ./after.png
+muse-cli send --image ./photo.jpg --thread <session-id> --wait 0  # image-only message
 muse-cli watch --timeout 60                       # tail live agent events
 muse-cli files --limit 20                         # images/videos in recent messages
 muse-cli download <seq|message-id|sandbox://...> -o ./out   # save agent-made files
@@ -246,6 +249,24 @@ found during reverse engineering.
 | [routes.json](https://github.com/nikships/muse-cli/blob/main/src/muse_cli/routes.json) | All 258 gateway methods with paths and services |
 | `muse-cli raw --help` | Escape hatch for calling any gateway method directly |
 
+### Sending images
+
+`send --image PATH` attaches a local PNG, JPEG, GIF or WebP to the message;
+repeat the flag for multiple images. Text is optional when an image is attached.
+It works with `--thread`, `--wait` and `--download`; in interactive chat you can
+use `/send "Review this" --image ./screen.png` (quote paths containing spaces).
+
+The CLI checks file signatures and rejects missing, empty, non-regular or
+unsupported files before authentication/sending. The combined raw-image limit
+is **10 MiB per message**; this is a CLI safety limit, not a promise of the
+service's upload limits. Images are sent as original bytes, without resizing,
+compression or metadata stripping. Only the filename, not the local directory,
+is included. Review images for sensitive content/metadata before sending.
+Large messages are automatically split into gateway transport chunks; you do
+not need to base64-encode or resize screenshots manually. Server-side content
+validation and limits still apply. `sent: true` with `--wait 0` only means the
+request was written; inspect history or use `--wait` to confirm a reply.
+
 ## Development
 
 ```bash
@@ -266,6 +287,7 @@ src/muse_cli/
   cli.py             argument parsing and all commands
   chat.py            interactive chat (the default command)
   browsers.py        reads the muse.ai login from Chromium browsers on macOS
+  attachments.py     validates and encodes local image attachments
   gateway.py         gateway client (auth, Noise transport, subscriptions)
   update.py          daily update notice and `muse-cli update`
   skill.py           installs and refreshes the bundled agent skill

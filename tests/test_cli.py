@@ -211,7 +211,7 @@ class SendDownloadTest(unittest.TestCase):
                 pass
 
         saved = []
-        args = cli.argparse.Namespace(text="x", thread=None, wait=30, download="out")
+        args = cli.argparse.Namespace(text="x", image=[], thread=None, wait=30, download="out")
         with patch.object(cli, "load_config", return_value={"node_id": "n"}), \
                 patch.object(cli, "connect", return_value=FakeGateway()), \
                 patch.object(cli, "save_resources",
@@ -228,7 +228,7 @@ class SendDownloadTest(unittest.TestCase):
         gw.call_json.side_effect = lambda method, body=None: {
             "chat_events": [] if gw.call_json.call_count == 1 else [reply]}
         gw._open.return_value = 1
-        args = cli.argparse.Namespace(text="x", thread=None, wait=1, download="out")
+        args = cli.argparse.Namespace(text="x", image=[], thread=None, wait=1, download="out")
         results = []
         with patch.object(cli, "load_config", return_value={"node_id": "n"}), \
                 patch.object(cli, "connect", return_value=gw), \

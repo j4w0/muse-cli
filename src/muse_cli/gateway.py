@@ -46,6 +46,10 @@ with open(os.path.join(_HERE, "routes.json")) as fh:
 
 SERVICE_IDS = {"daemon": 0, "sentinel": 1, "vault": 2, "authd": 3}
 
+# Muse's web client uses 65,489-byte payloads and at most 256 chunks per envelope.
+NOISE_CHUNK_BYTES = 65489
+NOISE_MAX_CHUNKS = 256
+
 
 class AuthError(RuntimeError):
     pass
@@ -199,11 +203,17 @@ class Gateway:
     # -- low-level framing -------------------------------------------------
     def _send_envelope(self, service_id, frame_bytes):
         outer = ServiceRequest(service=service_id, payload=frame_bytes)
+        payload = outer.SerializeToString()
+        total = max(1, (len(payload) + NOISE_CHUNK_BYTES - 1) // NOISE_CHUNK_BYTES)
+        if total > NOISE_MAX_CHUNKS:
+            raise ValueError("request exceeds the gateway's 256-chunk limit; send fewer or smaller images")
         chunk_id = struct.unpack("<q", os.urandom(8))[0]
-        fr = NoiseTransportFrame(chunk_id=chunk_id, chunk_index=0, total_chunks=1,
-                                 payload=outer.SerializeToString())
         with self._send_lock:
-            self.ws.send_bytes(bytes(self.noise.encrypt(fr.SerializeToString())))
+            for index in range(total):
+                start = index * NOISE_CHUNK_BYTES
+                fr = NoiseTransportFrame(chunk_id=chunk_id, chunk_index=index, total_chunks=total,
+                                         payload=payload[start:start + NOISE_CHUNK_BYTES])
+                self.ws.send_bytes(bytes(self.noise.encrypt(fr.SerializeToString())))
 
     def _read_frame(self):
         # Serialized so two threads can never interleave ws.recv / Noise
