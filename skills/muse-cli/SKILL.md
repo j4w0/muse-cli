@@ -165,6 +165,9 @@ muse-cli threads                                        # main chat + side chats
 muse-cli history --limit 5                              # recent main-chat messages
 muse-cli history --thread <session-id> --limit 5        # one side chat
 muse-cli send "message" --wait 120                      # send + wait for the reply
+muse-cli send "Review this screenshot" --image ./screen.png --wait 120
+muse-cli send "Compare" --image ./before.png --image ./after.png
+muse-cli send --image ./photo.jpg --thread <session-id> --wait 0
 muse-cli send "message" --thread <session-id> --wait 0  # fire and forget to a side chat
 muse-cli watch --timeout 60                             # tail live agent events
 muse-cli watch --thread <session-id>                    # tail one side chat
@@ -202,6 +205,15 @@ only for methods with no wrapper.
   than the wait: the message still landed, confirm with `history`. The reply
   is matched as a genuine answer, not background chatter.
 - `send --wait 0` is fire-and-forget (no polling).
+- `send --image PATH` uploads local PNG/JPEG/GIF/WebP images; repeat the flag
+  for multiple images. Text may be omitted for an image-only message. Works
+  with `--thread`, `--wait` and `--download`, and as `/send ... --image PATH`
+  in interactive chat. Quote paths containing spaces. Missing/empty/unsupported
+  files fail before auth/send; the combined raw-image limit is 10 MiB. Large
+  requests are chunked automatically, so screenshots do not need manual resizing.
+  Original bytes (including metadata) are sent, without conversion or stripping;
+  confirm the images are safe to share. Only the filename, not the local
+  directory, is included. Service-side content/size limits still apply.
 - `send --download DIR` keeps waiting after the reply until the thread has been
   quiet for 15 s (so it always takes at least that long), because generated
   images and videos arrive as separate messages after the text. The wait stops

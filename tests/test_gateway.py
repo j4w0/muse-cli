@@ -2,7 +2,8 @@ import threading
 import unittest
 from unittest.mock import MagicMock
 
-from muse_cli.gateway import Gateway, NoiseTransportFrame, ServiceFrame, ServiceResponse
+from muse_cli.gateway import (Gateway, NoiseTransportFrame, ServiceFrame, ServiceResponse,
+                              ServiceRequest, NOISE_CHUNK_BYTES, NOISE_MAX_CHUNKS)
 
 
 def make_gateway(frames):
@@ -75,6 +76,55 @@ class ReadFrameTest(unittest.TestCase):
         gw = make_gateway(frames)
         self.assertEqual(gw._read_frame().response.body, b"small")
         self.assertEqual(gw._read_frame().response.body, b"y" * 200)
+
+
+class SendFrameTest(unittest.TestCase):
+    def gateway(self):
+        gw = Gateway.__new__(Gateway)
+        gw._send_lock = threading.Lock()
+        gw.ws = MagicMock()
+        gw.noise = MagicMock()
+        gw.noise.encrypt.side_effect = lambda data: data
+        return gw
+
+    def test_small_requests_keep_single_frame(self):
+        gw = self.gateway()
+        gw._send_envelope(2, b"hello")
+        frame = NoiseTransportFrame.FromString(gw.ws.send_bytes.call_args.args[0])
+        self.assertEqual((frame.chunk_index, frame.total_chunks), (0, 1))
+        envelope = ServiceRequest.FromString(frame.payload)
+        self.assertEqual((envelope.service, envelope.payload), (2, b"hello"))
+
+    def test_large_requests_round_trip_in_bounded_ordered_chunks(self):
+        gw = self.gateway()
+        body = bytes(range(256)) * 900
+        gw._send_envelope(0, body)
+        frames = [NoiseTransportFrame.FromString(call.args[0])
+                  for call in gw.ws.send_bytes.call_args_list]
+        self.assertGreater(len(frames), 1)
+        self.assertEqual(len({f.chunk_id for f in frames}), 1)
+        self.assertEqual([f.chunk_index for f in frames], list(range(len(frames))))
+        for frame in frames:
+            self.assertEqual(frame.total_chunks, len(frames))
+            self.assertLessEqual(len(frame.payload), NOISE_CHUNK_BYTES)
+            self.assertLessEqual(len(frame.SerializeToString()) + 16, 65535)
+        envelope = ServiceRequest.FromString(b"".join(f.payload for f in frames))
+        self.assertEqual(envelope.payload, body)
+
+    def test_chunk_boundary(self):
+        for length in [NOISE_CHUNK_BYTES - 4, NOISE_CHUNK_BYTES - 3, NOISE_CHUNK_BYTES]:
+            gw = self.gateway()
+            gw._send_envelope(0, b"x" * length)
+            expected = ServiceRequest(service=0, payload=b"x" * length).ByteSize()
+            count = (expected + NOISE_CHUNK_BYTES - 1) // NOISE_CHUNK_BYTES
+            self.assertEqual(gw.ws.send_bytes.call_count, count)
+
+    def test_rejects_oversize_before_encrypting_or_sending_anything(self):
+        gw = self.gateway()
+        with self.assertRaisesRegex(ValueError, "256-chunk limit"):
+            gw._send_envelope(0, b"x" * (NOISE_CHUNK_BYTES * NOISE_MAX_CHUNKS))
+        gw.noise.encrypt.assert_not_called()
+        gw.ws.send_bytes.assert_not_called()
 
 
 if __name__ == "__main__":

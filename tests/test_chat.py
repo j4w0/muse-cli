@@ -138,6 +138,21 @@ class ChatSubcommandsTest(unittest.TestCase):
             handled = self.c.run_cli("/status --help")
         self.assertTrue(handled)
 
+    def test_run_cli_image_validation_error_stays_in_chat(self):
+        from muse_cli.cli import build_parser
+        self.c.parser = build_parser()
+        with patch("builtins.print") as output:
+            self.assertTrue(self.c.run_cli("/send --image /not-present/screen.png"))
+        self.assertIn("cannot read image", output.call_args.args[0])
+
+    def test_run_cli_empty_send_stays_in_chat_without_sending(self):
+        from muse_cli.cli import build_parser
+        self.c.parser = build_parser()
+        with patch("muse_cli.cli.connect") as connect, patch("builtins.print") as output:
+            self.assertTrue(self.c.run_cli("/send"))
+        connect.assert_not_called()
+        self.assertIn("text or at least one --image", output.call_args.args[0])
+
     def test_run_cli_handles_invalid_flags_without_exit(self):
         from muse_cli.cli import build_parser
         self.c.parser = build_parser()

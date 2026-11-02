@@ -233,6 +233,8 @@ class Chat:
                 args.fn(args)
             except (SystemExit, KeyboardInterrupt):
                 print()  # command stopped or exited; stay in the chat
+            except ValueError as e:
+                print(f"Error: {e}")
             return True
         return False
 

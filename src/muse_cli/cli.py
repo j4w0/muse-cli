@@ -562,10 +562,15 @@ SETTLE = 15
 
 
 def cmd_send(args):
+    from .attachments import image_items
+    if not args.text.strip() and not args.image:
+        raise ValueError("send requires message text or at least one --image PATH")
+    items = ([{"type": "text", "text": args.text}] if args.text else [])
+    items.extend(image_items(args.image))
     cfg = load_config()
     gw = connect(cfg)
     try:
-        params = {"items": [{"type": "text", "text": args.text}],
+        params = {"items": items,
                   "node_id": cfg["node_id"], "capabilities": {}}
         if args.thread:
             params["session_id"] = args.thread
@@ -940,7 +945,10 @@ def build_parser():
                    help="also save files (images/videos) from these messages into DIR")
     p.set_defaults(fn=cmd_history)
     p = sub.add_parser("send", help="send the agent a message")
-    p.add_argument("text"); p.add_argument("--thread", default=None)
+    p.add_argument("text", nargs="?", default=""); p.add_argument("--thread", default=None)
+    p.add_argument("--image", action="append", default=[], metavar="PATH",
+                   help="attach a local PNG, JPEG, GIF or WebP (repeatable; 10 MiB combined; "
+                        "original bytes, no resizing)")
     p.add_argument("--wait", type=int, default=90, help="seconds to wait for reply (0 = don't)")
     p.add_argument("--download", metavar="DIR", default=None,
                    help="save files the reply produced into DIR (needs --wait); waits until the "
@@ -1008,6 +1016,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.cmd is None:
         args.cmd, args.fn = "chat", _chat
+    if args.cmd == "send" and not args.text.strip() and not args.image:
+        ap.error("send requires message text or at least one --image PATH")
     # A piped command prints JSON. The notice stays off unless both streams
     # are a terminal, and `update` is already doing the upgrade.
     notice = None if args.cmd == "update" else start_update_check()
@@ -1026,6 +1036,9 @@ def main(argv=None):
         except TimeoutError as e:
             print(f"timeout: {e}", file=sys.stderr)
             sys.exit(4)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(2)
         except BrokenPipeError:
             # The reader (`head`, `jq -e`) closed early. Point stdout at devnull
             # so the interpreter's exit-time flush does not raise again.
